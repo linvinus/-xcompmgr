@@ -11,6 +11,6 @@ recommended options:
 compiled package for ubuntu available there https://launchpad.net/~linvinus/+archive/linvinus
 
 Main changes:
- * Ported DRM vblank, from compton
+ * Ported, from compton, sync to vblank (using DRM VBlank ioctl) (first time this method was implemented in Mythtv)
  * don't draw shadow for metacity alt+tab frames
  * Option to Daemonize/background process
