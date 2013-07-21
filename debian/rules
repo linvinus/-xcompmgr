@@ -1,0 +1,42 @@
+#!/usr/bin/make -f
+
+DEB_BUILD_GNU_TYPE ?= $(shell dpkg-architecture -qDEB_BUILD_GNU_TYPE)
+DEB_HOST_GNU_TYPE ?= $(shell dpkg-architecture -qDEB_HOST_GNU_TYPE)
+
+confflags = --prefix=/usr --build=$(DEB_BUILD_GNU_TYPE)
+
+ifneq ($(DEB_BUILD_GNU_TYPE),$(DEB_HOST_GNU_TYPE))
+	confflags += --host=$(DEB_HOST_GNU_TYPE)
+endif
+
+BUILDDIR = obj-$(DEB_BUILD_GNU_TYPE)
+
+build: build-stamp
+build-stamp:
+	dh build --before configure
+	autoreconf -vfi
+	mkdir -p $(BUILDDIR)
+	cd $(BUILDDIR) && ../configure $(confflags)
+	cd $(BUILDDIR) && $(MAKE)
+	dh build --after build
+	touch $@
+
+install: build-stamp
+	dh install --before dh_auto_install
+	cd $(BUILDDIR) && $(MAKE) install DESTDIR=$(CURDIR)/debian/tmp
+	dh install --after dh_auto_install
+
+binary-indep:
+	dh $@
+
+binary-arch: install
+	dh $@
+
+binary: binary-arch
+
+clean:
+	dh $@
+	rm -f Makefile.in aclocal.m4 config.h.in configure
+	rm -f depcomp install-sh missing
+	rm -rf $(BUILDDIR)
+	rm -f *-stamp

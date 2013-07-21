@@ -1,0 +1,60 @@
+xcompmgr (1.1.6-2linvinus2) quantal; urgency=low
+
+  * add "-V" DRM VBlank option, ported from compton (https://github.com/chjj/compton)
+
+ -- denis <linvinus@gmail.com>  Sun, 21 Jul 2013 20:28:43 +0400
+
+xcompmgr (1.1.6-2linvinus1) quantal; urgency=low
+
+  * added fix_shadow patch
+
+ -- denis <linvinus@gmail.com>  Tue, 30 Oct 2012 11:29:23 +0400
+
+xcompmgr (1.1.6-0ubuntu1) precise; urgency=low
+
+  * New upstream bugfix release (1.1.6)
+    - Fixes incorrect redraw for shaped windows once their shape changed
+  * Add build-dependency on libtool and xutils-dev
+
+ -- Stéphane Graber <stgraber@ubuntu.com>  Thu, 29 Mar 2012 20:09:24 -0400
+
+xcompmgr (1.1.5-1) unstable; urgency=low
+
+  * New upstream release.
+  * Switch to dpkg-source 3.0 (quilt) format.
+  * debian/control: 
+    - Standards-Version updated to 3.8.4.
+
+ -- Gustavo Franco <stratus@debian.org>  Sat, 27 Feb 2010 22:56:31 -0300
+
+xcompmgr (1.1.4-0.1) unstable; urgency=low
+
+  * Non-maintainer upload with maintainer agreement.
+  * New upstream release.
+  * Use debhelper v7, drop cdbs build-dep, update to newer automake.
+  * Add watch file.
+
+ -- Julien Cristau <jcristau@debian.org>  Thu, 29 May 2008 15:43:09 +0200
+
+xcompmgr (1.1.1+cvs.20051218-1) experimental; urgency=low
+
+  * First Debian release (Closes: #343947).
+  * debian/control
+    - Maintainer field changed
+    - Standards-Version updated to 3.6.2.1
+    - Build-Depends versioned
+    - Build-Depends on automake1.7 added
+
+ -- Gustavo Franco <stratus@debian.org>  Sun, 18 Dec 2005 21:44:26 -0200
+
+xcompmgr (1.1.1+cvs.20041109-0ubuntu2) UNRELEASED; urgency=low
+
+  * Add pkg-config to Build-Depends.
+
+ -- Daniel Stone <daniel.stone@canonical.com>  Wed, 24 Nov 2004 14:50:09 +0100
+
+xcompmgr (1.1.1+cvs.20041109-0ubuntu1) UNRELEASED; urgency=low
+
+  * First xcompmgr release.
+
+ -- Daniel Stone <daniel.stone@canonical.com>  Tue,  9 Nov 2004 21:01:19 +0100

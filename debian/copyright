@@ -1,0 +1,19 @@
+xcompmgr was primarily authored by Keith Packard <keithp@keithp.com> and
+Matthew Hawn <hawnpawn@yahoo.com>, with additional modifications by Dan
+Doel <dolio@case.edu>.
+
+xcompmgr is copyright both Keith Packard and Matthew Dawn.  The primary
+copyright/licence is:
+ * Copyright © 2003 Keith Packard
+ *
+ * Permission to use, copy, modify, distribute, and sell this software and its
+ * documentation for any purpose is hereby granted without fee, provided that
+ * the above copyright notice appear in all copies and that both that
+ * copyright notice and this permission notice appear in supporting
+ * documentation, and that the name of Keith Packard not be used in
+ * advertising or publicity pertaining to distribution of the software without
+ * specific, written prior permission.  Keith Packard makes no
+ * representations about the suitability of this software for any purpose.  It
+ * is provided "as is" without express or implied warranty.
+
+Matthew Hawn has specified he wishes to assert the same terms.

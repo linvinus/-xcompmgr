@@ -1,0 +1,368 @@
+--- a/xcompmgr.c
++++ b/xcompmgr.c
+@@ -46,6 +46,16 @@
+ #include <X11/extensions/Xrender.h>
+ #include <X11/extensions/shape.h>
+ 
++//#ifdef CONFIG_VSYNC_DRM
++#include <fcntl.h>
++// We references some definitions in drm.h, which could also be found in
++// /usr/src/linux/include/drm/drm.h, but that path is probably even less
++// reliable than libdrm
++#include <drm.h>
++#include <sys/ioctl.h>
++#include <errno.h>
++//#endif
++
+ #if COMPOSITE_MAJOR > 0 || COMPOSITE_MINOR >= 2
+ #define HAS_NAME_WINDOW_PIXMAP 1
+ #endif
+@@ -143,6 +153,9 @@
+ static Atom		winSplashAtom;
+ static Atom		winDialogAtom;
+ static Atom		winNormalAtom;
++static Atom		winTootipAtom;
++static Atom		winComboAtom;
++static Atom		winNotificationAtom;
+ 
+ /* opacity property name; sometime soon I'll write up an EWMH spec for it */
+ #define OPACITY_PROP	"_NET_WM_WINDOW_OPACITY"
+@@ -175,6 +188,9 @@
+ static void
+ determine_mode(Display *dpy, win *w);
+ 
++static Atom
++determine_wintype (Display *dpy, Window w);
++
+ static double
+ get_opacity_percent(Display *dpy, win *w, double def);
+ 
+@@ -203,6 +219,76 @@
+ static unsigned char	*shadowCorner = NULL;
+ static unsigned char	*shadowTop = NULL;
+ 
++/*
++static void
++dump_win (win *w)
++{
++    printf ("\t%08lx: %d x %d + %d + %d (%d) extents=%d shadow=%d\n", w->id,
++	    w->a.width, w->a.height, w->a.x, w->a.y, w->a.border_width,w->extents,w->shadow);
++}
++
++
++static void
++dump_wins (void)
++{
++    win	*w;
++
++    printf ("windows:\n");
++    for (w = list; w; w = w->next)
++	dump_win (w);
++}
++*/
++  // === DRM VSync related ===
++static Bool sync_vblanc_drm = False;
++/// File descriptor of DRI device file. Used for DRM VSync.
++static int drm_fd=-1;
++
++/**
++ * Wait for next VSync, DRM method.
++ *
++ * Stolen from: https://github.com/MythTV/mythtv/blob/master/mythtv/libs/libmythtv/vsync.cpp
++ */
++static int
++vsync_drm_wait() {
++  int ret = -1;
++  drm_wait_vblank_t vbl;
++
++  vbl.request.type = _DRM_VBLANK_RELATIVE,
++  vbl.request.sequence = 1;
++
++  do {
++     ret = ioctl(drm_fd, DRM_IOCTL_WAIT_VBLANK, &vbl);
++     vbl.request.type &= ~_DRM_VBLANK_RELATIVE;
++  } while (ret && errno == EINTR);
++
++  if (ret)
++    fprintf(stderr, "vsync_drm_wait()=%d drm_fd=%d: VBlank ioctl did not work, "
++        "unimplemented in this drmver?\n",ret,drm_fd);
++
++  return ret;
++}
++
++/**
++ * Initialize DRM VSync.
++ *
++ * @return true for success, false otherwise
++ */
++static Bool
++vsync_drm_init() {
++  // Should we always open card0?
++  if (drm_fd < 0 && (drm_fd = open("/dev/dri/card0", O_RDWR)) < 0) {
++    printf("(): Failed to open device.");
++    return False;
++  }
++
++  if (vsync_drm_wait(/*ps*/))
++    return False;
++
++  return True;
++}
++
++
++
+ static int
+ get_time_in_milliseconds (void)
+ {
+@@ -830,21 +916,37 @@
+ win_extents (Display *dpy, win *w)
+ {
+     XRectangle	    r;
++    Bool draw_shadow=True;
+ 
+     r.x = w->a.x;
+     r.y = w->a.y;
+     r.width = w->a.width + w->a.border_width * 2;
+     r.height = w->a.height + w->a.border_width * 2;
+-    if (compMode != CompSimple && !(w->windowType == winDockAtom && excludeDockShadows))
++
++	if( 1 && w->windowType == winNormalAtom && 
++		w->a.override_redirect && 
++		((*((long int *)w->a.visual) & CopyFromParent) == CopyFromParent) ){
++			
++		draw_shadow = False;//ignore metacity animation, alt+tab
++	}else if( w->mode == WINDOW_ARGB || w->windowType==0 ){
++		draw_shadow = False;//ignore unknown type, or transparent window
++	}else if(w->windowType==winTootipAtom ||
++			 w->windowType==winComboAtom || 
++		     w->windowType==winNotificationAtom ){
++		draw_shadow = False;//ignore toolkit windows
++	}
++	
++		 
++
++    if (compMode != CompSimple && !(w->windowType == winDockAtom && excludeDockShadows) && draw_shadow )
+     {
+-	if (compMode == CompServerShadows || w->mode != WINDOW_ARGB)
+-	{
++	//if (compMode == CompServerShadows || 1)
++	//{
+ 	    XRectangle  sr;
+-
+ 	    if (compMode == CompServerShadows)
+ 	    {
+-		w->shadow_dx = 2;
+-		w->shadow_dy = 7;
++		w->shadow_dx = 4;
++		w->shadow_dy = 4;
+ 		w->shadow_width = w->a.width;
+ 		w->shadow_height = w->a.height;
+ 	    }
+@@ -858,8 +960,8 @@
+ 		    if (w->mode == WINDOW_TRANS)
+ 			opacity = opacity * ((double)w->opacity)/((double)OPAQUE);
+ 		    w->shadow = shadow_picture (dpy, opacity, w->alphaPict,
+-						w->a.width + w->a.border_width * 2,
+-						w->a.height + w->a.border_width * 2,
++						r.width,
++						r.height,
+ 						&w->shadow_width, &w->shadow_height);
+ 		}
+ 	    }
+@@ -881,7 +983,7 @@
+ 		r.width = sr.x + sr.width - r.x;
+ 	    if (sr.y + sr.height > r.y + r.height)
+ 		r.height = sr.y + sr.height - r.y;
+-	}
++	//}
+     }
+     return XFixesCreateRegion (dpy, &r, 1);
+ }
+@@ -998,6 +1100,7 @@
+ 		w->borderClip = None;
+ 	    }
+ 	}
++	//~ dump_win(w);
+ 	if (!w->borderSize)
+ 	    w->borderSize = border_size (dpy, w);
+ 	if (!w->extents)
+@@ -1028,7 +1131,7 @@
+ 	{
+ 	    w->borderClip = XFixesCreateRegion (dpy, NULL, 0);
+ 	    XFixesCopyRegion (dpy, w->borderClip, region);
+-	    XFixesIntersectRegion(dpy, w->borderClip, w->borderClip, w->borderSize);
++	    XFixesSetPictureClipRegion(dpy, rootBuffer, 0, 0, w->borderClip);
+ 	}
+ 	w->prev_trans = t;
+ 	t = w;
+@@ -1119,12 +1222,21 @@
+ 	w->borderClip = None;
+     }
+     XFixesDestroyRegion (dpy, region);
++
++    // Make sure all previous requests are processed to achieve best
++    // effect
++    XSync(dpy, False);
++    if(sync_vblanc_drm) vsync_drm_wait();
++        
+     if (rootBuffer != rootPicture)
+     {
+ 	XFixesSetPictureClipRegion (dpy, rootBuffer, 0, 0, None);
+ 	XRenderComposite (dpy, PictOpSrc, rootBuffer, None, rootPicture,
+ 			  0, 0, 0, 0, 0, 0, root_width, root_height);
+     }
++
++	XFlush(dpy);
++    
+ }
+ 
+ static void
+@@ -1198,6 +1310,9 @@
+ #endif
+     w->damaged = 0;
+ 
++	if(w->windowType==0)
++		w->windowType = determine_wintype (dpy, w->id);
++
+     if (fade && fadeWindows)
+ 	set_fade (dpy, w, 0, get_opacity_percent (dpy, w, 1.0), fade_in_step, NULL, False, True, True);
+ }
+@@ -1485,7 +1600,7 @@
+     new->borderClip = None;
+     new->prev_trans = NULL;
+ 
+-    new->windowType = determine_wintype (dpy, new->id);
++    new->windowType = 0;
+ 
+     new->next = *p;
+     *p = new;
+@@ -1681,25 +1796,6 @@
+     }
+ }
+ 
+-/*
+-static void
+-dump_win (win *w)
+-{
+-    printf ("\t%08lx: %d x %d + %d + %d (%d)\n", w->id,
+-	    w->a.width, w->a.height, w->a.x, w->a.y, w->a.border_width);
+-}
+-
+-
+-static void
+-dump_wins (void)
+-{
+-    win	*w;
+-
+-    printf ("windows:\n");
+-    for (w = list; w; w = w->next)
+-	dump_win (w);
+-}
+-*/
+ 
+ static void
+ damage_win (Display *dpy, XDamageNotifyEvent *de)
+@@ -1979,6 +2075,8 @@
+     fprintf (stderr, "   -n\n      Normal client-side compositing with transparency support\n");
+     fprintf (stderr, "   -s\n      Draw server-side shadows with sharp edges.\n");
+     fprintf (stderr, "   -S\n      Enable synchronous operation (for debugging).\n");
++    fprintf (stderr, "   -b\n      Daemonize/background process.\n");
++    fprintf (stderr, "   -V\n      Sync to vblank, using drm.\n");
+     exit (1);
+ }
+ 
+@@ -2033,6 +2131,26 @@
+     return True;
+ }
+ 
++static void
++fork_after(void) {
++  if (getppid() == 1) return;
++
++  int pid = fork();
++
++  if (pid == -1) {
++    fprintf(stderr, "Fork failed\n");
++    return;
++  }
++
++  if (pid > 0) _exit(0);
++
++  setsid();
++
++  freopen("/dev/null", "r", stdin);
++  freopen("/dev/null", "w", stdout);
++  freopen("/dev/null", "w", stderr);
++}
++
+ int
+ main (int argc, char **argv)
+ {
+@@ -2051,8 +2169,9 @@
+     int		    composite_major, composite_minor;
+     char	    *display = NULL;
+     int		    o;
++    Bool		fork_after_register=False;
+ 
+-    while ((o = getopt (argc, argv, "D:I:O:d:r:o:l:t:scnfFCaS")) != -1)
++    while ((o = getopt (argc, argv, "D:I:O:d:r:o:l:t:scnfFCaSbV")) != -1)
+     {
+ 	switch (o) {
+ 	case 'd':
+@@ -2109,6 +2228,12 @@
+ 	case 't':
+ 	    shadowOffsetY = atoi (optarg);
+ 	    break;
++	case 'b':
++	    fork_after_register=True;
++	    break;
++	case 'V':
++	    sync_vblanc_drm=True;
++	    break;
+ 	default:
+ 	    usage (argv[0]);
+ 	    break;
+@@ -2164,6 +2289,7 @@
+     {
+ 	exit (1);
+     }
++	if (fork_after_register) fork_after();
+ 
+     /* get atoms */
+     opacityAtom = XInternAtom (dpy, OPACITY_PROP, False);
+@@ -2176,6 +2302,9 @@
+     winSplashAtom = XInternAtom (dpy, "_NET_WM_WINDOW_TYPE_SPLASH", False);
+     winDialogAtom = XInternAtom (dpy, "_NET_WM_WINDOW_TYPE_DIALOG", False);
+     winNormalAtom = XInternAtom (dpy, "_NET_WM_WINDOW_TYPE_NORMAL", False);
++    winTootipAtom = XInternAtom(dpy,  "_NET_WM_WINDOW_TYPE_TOOLTIP", False);
++    winComboAtom = XInternAtom(dpy,  "_NET_WM_WINDOW_TYPE_COMBO", False);
++    winNotificationAtom = XInternAtom(dpy,  "_NET_WM_WINDOW_TYPE_NOTIFICATION", False);
+ 
+     pa.subwindow_mode = IncludeInferiors;
+ 
+@@ -2218,11 +2347,14 @@
+     XUngrabServer (dpy);
+     ufd.fd = ConnectionNumber (dpy);
+     ufd.events = POLLIN;
++
++	if(sync_vblanc_drm) { if(!vsync_drm_init()) {sync_vblanc_drm=False;} else {printf("Sync to VBlank enabled\n");} }
++    
+     if (!autoRedirect)
+ 	paint_all (dpy, None);
+     for (;;)
+     {
+-	/*	dump_wins (); */
++		/*dump_wins (); /**/
+ 	do {
+ 	    if (autoRedirect)
+ 		XFlush (dpy);
+--- a/configure.ac
++++ b/configure.ac
+@@ -18,6 +18,6 @@
+ XORG_MACROS_VERSION(1.3)
+ XORG_DEFAULT_OPTIONS
+ 
+-PKG_CHECK_MODULES(XCOMPMGR, xcomposite xfixes xdamage xrender xext)
++PKG_CHECK_MODULES(XCOMPMGR, xcomposite xfixes xdamage xrender xext libdrm)
+ 
+ AC_OUTPUT([Makefile])
